@@ -1,4 +1,5 @@
--- Lua
+-- AC BYPASS - LU?
+
 local Players = game:GetService("Players")
 local CollectionService = game:GetService("CollectionService")
 local TweenService = game:GetService("TweenService")
@@ -20,12 +21,23 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local VirtualInput = Instance.new("VirtualInputManager")
 
 -- ==========================================
--- HIDDEN GUI (CoreGui / gethui)
+-- HIDDEN GUI (CoreGui / gethui) — 100%
 -- ==========================================
 local function getHiddenGui()
     if type(gethui) == "function" then
         local ok, ui = pcall(gethui)
         if ok and ui then return ui end
+    end
+    if type(get_hidden_gui) == "function" then
+        local ok, ui = pcall(get_hidden_gui)
+        if ok and ui then return ui end
+    end
+    if type(getgenv) == "function" then
+        local ok, genv = pcall(getgenv)
+        if ok and genv and type(genv.gethui) == "function" then
+            local ok2, ui = pcall(genv.gethui)
+            if ok2 and ui then return ui end
+        end
     end
     return CoreGui
 end
@@ -416,10 +428,18 @@ local function stopFlashLagger()
 end
 
 -- ==========================================
--- FLASH SPEED
+-- FLASH SPEED (dynamic: 200 sem TP V2, 300 com)
 -- ==========================================
 _G.FlashSpeed = _G.FlashSpeed or 150
-local function getFlashSpeed() return _G.FlashSpeed or 150 end
+local function getFlashSpeed()
+    local maxV = _G.TPV2 and 300 or 200
+    local v = _G.FlashSpeed or 150
+    if v > maxV then v = maxV end
+    return v
+end
+local function getMaxFlashSpeed()
+    return _G.TPV2 and 300 or 200
+end
 
 -- ==========================================
 -- SAFE ZONE
@@ -1341,6 +1361,14 @@ _G.BlockMode = savedSettings.BlockMode or "normal"
 _G.LaggerOnFlash = savedBool(savedSettings, "LaggerOnFlash", false)
 _G.LaggerPower = savedSettings.LaggerPower or 50
 _G.FlashSpeed = savedSettings.FlashSpeed or 150
+-- 🆕 TP V2
+_G.TPV2 = savedBool(savedSettings, "TPV2", false)
+-- clamp flash speed to current max
+do
+    local maxV = _G.TPV2 and 300 or 200
+    if type(_G.FlashSpeed) ~= "number" or _G.FlashSpeed < 0 then _G.FlashSpeed = 150 end
+    if _G.FlashSpeed > maxV then _G.FlashSpeed = maxV end
+end
 _G.AimbotEnabled = savedBool(savedSettings, "Aimbot", false)
 _G.AutoResetTiny = savedBool(savedSettings, "AutoResetTiny", false)
 TinyState.Enabled = _G.AutoResetTiny
@@ -1536,7 +1564,7 @@ task.spawn(function()
 end)
 
 -- ==========================================
--- CLONE ESP
+-- CLONE ESP  (FIXED: 100% HIDDEN_GUI)
 -- ==========================================
 _G.CloneESP = (function()
     local _cr = (type(cloneref) == "function") and cloneref or function(o) return o end
@@ -1611,7 +1639,7 @@ _G.CloneESP = (function()
             bb.MaxDistance = 0
             bb.ClipsDescendants = false
             bb.Adornee = head
-
+            -- 100% hidden: CoreGui/gethui
             bb.Parent = HIDDEN_GUI or head
 
             local background = Instance.new("Frame")
@@ -3291,7 +3319,7 @@ table.insert(ActiveConnections, LocalPlayer.CharacterAdded:Connect(function(newC
 end))
 
 -- ==========================================
--- START TRIP
+-- START TRIP (com TP V2: jump + trigger space maior)
 -- ==========================================
 local function startTripToPetSlot(prompt, slotNumber)
     local config = SlotsConfig[slotNumber] or SlotsConfig[1]
@@ -3309,8 +3337,22 @@ local function startTripToPetSlot(prompt, slotNumber)
     autoStealEnabled = true
     startFlashLagger()
 
+    -- 🆕 TP V2: dá 1 pulo antes de ir para evitar erro de colisão no chão
+    if _G.TPV2 and Root and Root.Parent and Humanoid and Humanoid.Health > 0 then
+        pcall(function()
+            Humanoid.Jump = true
+        end)
+        pcall(function()
+            Root.AssemblyLinearVelocity = Vector3.new(
+                Root.AssemblyLinearVelocity.X, 60, Root.AssemblyLinearVelocity.Z
+            )
+        end)
+        task.wait(0.09)
+    end
+
     local Speed = getFlashSpeed()
-    local grabStartDistance = 70
+    -- 🆕 TP V2: espaço de trigger maior
+    local grabStartDistance = _G.TPV2 and 110 or 70
     local grabStarted = false
     local carpet = findTool(_G.WalkItem or "Flying Carpet")
     if carpet then Humanoid:UnequipTools() task.wait(0.03) Humanoid:EquipTool(carpet) end
@@ -3980,6 +4022,7 @@ local function BuildHUB()
     HIGH_HUB_GUI.DisplayOrder = 999
     HIGH_HUB_GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     HIGH_HUB_GUI.IgnoreGuiInset = false
+    -- 100% hidden
     HIGH_HUB_GUI.Parent = HIDDEN_GUI
 
     local guiLocked = false
@@ -5112,6 +5155,7 @@ local function BuildHUB()
         LaggerOnFlash = function() return _G.LaggerOnFlash or false end,
         LaggerPower = function() return _G.LaggerPower or 50 end,
         FlashSpeed = function() return _G.FlashSpeed or 150 end,
+        TPV2 = function() return _G.TPV2 == true end,
         AllowDisallowEnabled = function() return _G.AllowDisallowEnabled == true end,
         PlayerESP = function() return _G.PlayerESP or false end,
         AutoCarpetSpeed = function() return _G.AutoCarpetSpeed or false end,
@@ -5157,6 +5201,16 @@ local function BuildHUB()
     toggleRow(ScrollFlash, "Flash TP On Low Timer", _G.AutoFlashLowTimer, function(v)
         _G.AutoFlashLowTimer = v
         if not v then lastSeenTimers = {} end
+        saveSettings()
+    end)
+    -- 🆕 TP V2 toggle (libera speed 300 + jump + trigger extra)
+    toggleRow(ScrollFlash, "TP V2", _G.TPV2, function(v)
+        _G.TPV2 = v
+        -- clamp speed when disabling
+        if not v and _G.FlashSpeed and _G.FlashSpeed > 200 then
+            _G.FlashSpeed = 200
+        end
+        if _refreshSpeedSlider then pcall(_refreshSpeedSlider) end
         saveSettings()
     end)
     toggleRow(ScrollFlash, "Ragdoll Bypass", _G.RagdollBypass, function(v) _G.RagdollBypass = v end)
@@ -5237,7 +5291,7 @@ local function BuildHUB()
         end)
     end
 
-    -- FLASH SPEED slider (agora até 240)
+    -- FLASH SPEED slider (dinâmico: 200 base / 300 com TP V2)
     do
         sectionOrder += 1
         local speedLblRow = Instance.new("Frame")
@@ -5276,16 +5330,31 @@ local function BuildHUB()
         speedTrack.ZIndex = 6
         Instance.new("UICorner", speedTrack).CornerRadius = UDim.new(1, 0)
         local speedFill = Instance.new("Frame", speedTrack)
-        speedFill.Size = UDim2.new(math.clamp((_G.FlashSpeed or 150) / 240, 0, 1), 0, 1, 0)
         speedFill.BackgroundColor3 = C.accent
         speedFill.BorderSizePixel = 0
         speedFill.ZIndex = 7
         Instance.new("UICorner", speedFill).CornerRadius = UDim.new(1, 0)
+
+        local function getMaxSpeedLocal()
+            return _G.TPV2 and 300 or 200
+        end
+
+        local function refreshSpeedSlider()
+            local maxV = getMaxSpeedLocal()
+            if _G.FlashSpeed > maxV then _G.FlashSpeed = maxV end
+            local pct = math.clamp((_G.FlashSpeed or 150) / maxV, 0, 1)
+            speedFill.Size = UDim2.new(pct, 0, 1, 0)
+            speedValLbl.Text = tostring(math.floor(_G.FlashSpeed or 150)) .. " / " .. maxV
+        end
+        _refreshSpeedSlider = refreshSpeedSlider
+        refreshSpeedSlider()
+
         local function updateSpeed(pct)
             pct = math.clamp(pct, 0, 1)
-            _G.FlashSpeed = math.floor(pct * 240)
+            local maxV = getMaxSpeedLocal()
+            _G.FlashSpeed = math.floor(pct * maxV)
             speedFill.Size = UDim2.new(pct, 0, 1, 0)
-            speedValLbl.Text = tostring(_G.FlashSpeed)
+            speedValLbl.Text = tostring(_G.FlashSpeed) .. " / " .. maxV
             saveSettings()
         end
         local dragging = false
@@ -5913,16 +5982,21 @@ BuildHUB()
 -- FPS + PING OVERLAY (drag / F8 hide-show)
 -- ==========================================
 do
-    local old = HIDDEN_GUI and HIDDEN_GUI:FindFirstChild("HighBanner")
-    if old then old:Destroy() end
-    local oldPg = PlayerGui and PlayerGui:FindFirstChild("HighBanner")
-    if oldPg then oldPg:Destroy() end
+    if HIDDEN_GUI then
+        local old = HIDDEN_GUI:FindFirstChild("HighBanner")
+        if old then old:Destroy() end
+    end
+    if PlayerGui then
+        local oldPg = PlayerGui:FindFirstChild("HighBanner")
+        if oldPg then oldPg:Destroy() end
+    end
     if HIDDEN_GUI then
         local gui = Instance.new("ScreenGui")
         gui.Name = "HighBanner"
         gui.ResetOnSpawn = false
         gui.IgnoreGuiInset = true
         gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        -- 100% hidden
         gui.Parent = HIDDEN_GUI
         local root = Instance.new("Frame")
         root.Name = "Root"
@@ -5943,6 +6017,7 @@ do
         logo.Size = UDim2.fromOffset(31, 44)
         logo.Font = Enum.Font.GothamBold
         logo.Text = "H"
+        -- 🆕 cor do H igual às demais (branco/cinza claro)
         logo.TextColor3 = Color3.fromRGB(235, 235, 240)
         logo.TextSize = 26
         local info = Instance.new("TextLabel", root)
